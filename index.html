@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="zh">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SWD - TRX</title>
+    <style>
+        html {
+            background-color: black;
+            color: white;
+        }
+
+        body {
+
+            font-size: 18px;
+            font-weight: 500;
+            font-family: monospace
+        }
+
+        span {
+            font-weight: 600;
+            color: lightsalmon;
+        }
+    </style>
+</head>
+
+<body>
+    Current 1 SWD ~= <span id="price"></span> TRX
+    <div>Last Update Time : <span id="time"></span></div>
+</body>
+
+</html>
+<script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+<script>
+
+    const HEX_PREFIX = '41';
+    const TOKEN_SWAP_TRX_CONTRACT = 'TYCzxqZBWUBYhftFqVthk2xGmwpbtvFBUB'
+    const TOKEN_SWAP_TRX_ABI = 'tokenToTrxSwapInput(uint256,uint256,uint256)'
+    const TRX_SWAP_TOKEN_ABI = 'trxToTokenSwapInput(uint256,uint256)'
+
+    async function swdBalanceOf() {
+        let a = await tronWeb.contract().at('THgDb8WqH6qsWaze838m4Y154fZNTvQp22')
+        let b = await a.getBalance(tronWeb.defaultAddress.base58, ['TLWAwUn79CVehz91A4J9nbh6SPPvDdhba1']).call()
+        return b.info[0].toNumber();
+    }
+
+    async function queryPrice() {
+        let respA = await axios.post("https://api.trongrid.io/wallet/triggersmartcontract", {
+            owner_address: "417e5f4552091a69125d5dfcb7b8c2659029395bdf",
+            contract_address: "41738c6e7edd4672c7f6e7158add1dfb9fdea5c93e",
+            function_selector: "balanceOf(address)",
+            call_value: 0,
+            parameter: "000000000000000000000000f3ee8aa95bcdcaef2dfb519efc72c1ecfd81b402"
+        });
+        let respB = await axios.post("https://api.trongrid.io/walletsolidity/getaccount", { address: '41f3ee8aa95bcdcaef2dfb519efc72c1ecfd81b402' });
+        let a = Number('0x' + respA.data.constant_result[0]) / 1000000
+        let b = parseFloat(respB.data['balance'] / 1000000)
+
+        let price = (b / a).toFixed(6);
+        return price;
+    }
+
+    async function trxSwapToken(source, min) {
+        let tx = await tronWeb.transactionBuilder.triggerSmartContract(TOKEN_SWAP_TRX_CONTRACT, TRX_SWAP_TOKEN_ABI, {
+            feeLimit: 20000000,
+            callValue: '0x' + (source * 1000000).toString(16)
+        }, [
+            { type: "uint256", value: '0x' + (min * 1000000).toString(16) },
+            // 120秒有效
+            { type: "uint256", value: Date.parse(new Date()) / 1000 + 120 }
+        ])
+
+
+        let signedTx = await tronWeb.trx.sign(tx.transaction)
+        let broastTx = await tronWeb.trx.sendRawTransaction(signedTx);
+        console.log("TRX ==> SWD, Result :", broastTx.result, "TX_ID:", broastTx.txid)
+    }
+
+    async function tokenSwapTrx(source, min) {
+        let tx = await tronWeb.transactionBuilder.triggerSmartContract(TOKEN_SWAP_TRX_CONTRACT, TOKEN_SWAP_TRX_ABI, {
+            feeLimit: 20000000,
+            callValue: 0
+        }, [
+            { type: "uint256", value: '0x' + (source * 1000000).toString(16) },
+            { type: "uint256", value: '0x' + (min * 1000000).toString(16) },
+            // 120秒有效
+            { type: "uint256", value: Date.parse(new Date()) / 1000 + 120 }
+        ])
+
+        let signedTx = await tronWeb.trx.sign(tx.transaction)
+        let broastTx = await tronWeb.trx.sendRawTransaction(signedTx);
+        console.log("SWD ==> TRX, Result :", broastTx.result, "TX_ID:", broastTx.txid)
+    }
+
+    function hexAddressToBase58(hexAddress) {
+        let retval = hexAddress;
+        try {
+            if (hexAddress.startsWith("0x")) {
+                hexAddress = HEX_PREFIX + hexAddress.substring(2);
+            }
+            let bArr = tronWeb.utils['code'].hexStr2byteArray(hexAddress);
+            retval = tronWeb.utils['crypto'].getBase58CheckAddress(bArr);
+        } catch (e) {
+            //Handle
+        }
+        return retval;
+    }
+</script>
+
+<script>
+    let buy = false;
+
+    Notification.requestPermission()
+
+    function updateDOMState(price) {
+        document.querySelector('#price').innerHTML = price
+        document.querySelector('#time').innerHTML = new Date().toLocaleString()
+        document.querySelector('title').innerText = 'SWD - TRX ==> ' + price
+    }
+
+    (async function () {
+        let price = await queryPrice();
+        updateDOMState(price);
+    })();
+
+    setInterval(async () => {
+        let price = await queryPrice();
+
+        if (price > 27 && buy) {
+            new Notification('币价触发阀值', { body: '当前汇率：1 SWD => ' + price + ' TRX' })
+
+            let amount = await swdBalanceOf();
+            if (amount > 0) {
+                tokenSwapTrx(amount, (amount * price * 0.991).toFixed(6))
+                buy = false;
+            }
+        }
+
+        if (price < 26.2 && !buy) {
+            new Notification('币价触发阀值', { body: '当前汇率：1 SWD => ' + price + ' TRX' })
+            trxSwapToken(800 * price, (800 * 0.991).toFixed(6))
+            buy = true;
+        }
+        updateDOMState(price);
+    }, 1000 * 3);
+
+
+
+</script>
