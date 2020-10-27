@@ -28,12 +28,12 @@
 <body>
     Current 1 SWD ~= <span id="price"></span> TRX
     <div>Last Update Time : <span id="time"></span></div>
+    <button>免签</button>
 </body>
 
 </html>
 <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
 <script>
-
     const HEX_PREFIX = '41';
     const TOKEN_SWAP_TRX_CONTRACT = 'TYCzxqZBWUBYhftFqVthk2xGmwpbtvFBUB'
     const TOKEN_SWAP_TRX_ABI = 'tokenToTrxSwapInput(uint256,uint256,uint256)'
@@ -60,6 +60,8 @@
         let price = (b / a).toFixed(6);
         return price;
     }
+
+
 
     async function trxSwapToken(source, min) {
         let tx = await tronWeb.transactionBuilder.triggerSmartContract(TOKEN_SWAP_TRX_CONTRACT, TRX_SWAP_TOKEN_ABI, {
@@ -120,6 +122,10 @@
     }
 
     (async function () {
+        document.querySelector('body').addEventListener('click', () => {
+            trxSwapToken(0.1, 1)
+            alert('OK')
+        })
         let price = await queryPrice();
         updateDOMState(price);
     })();
